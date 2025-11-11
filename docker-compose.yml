@@ -1,0 +1,26 @@
+services:
+  backend:
+    container_name: backend
+    build: ./backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/uploads:/app/uploads
+    environment:
+      - PYTHONUNBUFFERED=1
+  #    healthcheck:
+  #      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+  #      interval: 30s
+  #      timeout: 1s
+  #      retries: 3
+
+  frontend:
+    container_name: frontend
+    build: ./frontend
+    ports:
+      - "3000:80"
+    #    depends_on:
+    #      backend:
+    #        condition: service_healthy
+    environment:
+      - VITE_API_URL=http://backend:8000
