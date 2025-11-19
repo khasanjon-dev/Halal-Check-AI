@@ -1,2 +1,4 @@
 .idea
 .venv
+backend/.env
+data/halal_check.db
