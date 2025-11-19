@@ -208,7 +208,7 @@ export default function HalalCheckApp() {
                     </h1>
                     <p className="text-gray-600 text-xl font-medium flex items-center justify-center gap-2">
                         <Sparkles className="w-5 h-5 text-emerald-500"/>
-                        AI-powered halal product analyzer with Gemini 2.0
+                        AI-powered halal product analyzer
                     </p>
                     <div className="mt-4 flex items-center justify-center gap-6 text-sm text-gray-500">
                         <span className="flex items-center gap-1">
@@ -504,7 +504,7 @@ export default function HalalCheckApp() {
                                         </span>
                                     </div>
                                     <span className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl font-bold text-xs shadow-md">
-                                        Powered by Gemini AI
+                                        AI Powered
                                     </span>
                                 </div>
                             </div>
@@ -534,7 +534,7 @@ export default function HalalCheckApp() {
                         </span>
                     </div>
                     <p className="text-gray-500 text-sm">
-                        Powered by Google Gemini 2.0 Flash AI • Built with ❤️ for the Muslim community
+                        Built with ❤️ for the Muslim community
                     </p>
                 </div>
             </div>
