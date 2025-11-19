@@ -1,26 +1,35 @@
 services:
   backend:
-    container_name: backend
+    container_name: halal-check-backend
     build: ./backend
     ports:
       - "8000:8000"
     volumes:
-      - ./backend/uploads:/app/uploads
+      - ./backend/.env:/app/.env
+      - ./data:/app/data
     environment:
       - PYTHONUNBUFFERED=1
-  #    healthcheck:
-  #      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
-  #      interval: 30s
-  #      timeout: 1s
-  #      retries: 3
+      - DEBUG=True
+      - SQL_URL=sqlite+aiosqlite:////app/data/halal_check.db
+    env_file:
+      - ./backend/.env
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/api/v1/halal-check/history/health-check')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   frontend:
-    container_name: frontend
+    container_name: halal-check-frontend
     build: ./frontend
     ports:
       - "3000:80"
-    #    depends_on:
-    #      backend:
-    #        condition: service_healthy
+    depends_on:
+      - backend
     environment:
-      - VITE_API_URL=http://backend:8000
+      - VITE_API_URL=http://localhost:8000
+
+volumes:
+  data:
+

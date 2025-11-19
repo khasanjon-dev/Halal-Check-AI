@@ -1,226 +1,157 @@
-# 🕌 Halal Check AI — Fullstack Project (FastAPI + React + Docker)
-
-An AI-powered halal verification web app that allows users to **upload an image or enter text** (e.g., ingredients,
-product description), and the system processes it to determine whether the product is **Halal, Haram, or Doubtful**.
-
----
-
-## 🚀 Features
-
-- 🧠 AI-ready backend built with **FastAPI**
-- ⚛️ Beautiful **React** frontend with live previews
-- 📸 Upload product images or type text descriptions
-- 🔄 Loading states with smooth UX
-- 🐳 Fully **Dockerized** for local or production deployment
-- 🔒 CORS configured for safe API access
-- 📂 Uploaded files automatically saved in organized folders
-
----
-
-## 🧱 Project Structure
-
+# 🕌 Halal Checker App
+AI-powered Halal compliance and food safety checker using Google Gemini Flash API.
+## 🌟 Features
+- ✅ **Halal Compliance Analysis** - Strict halal/haram determination
+- 🔍 **Ingredient Detection** - Automatic ingredient identification
+- ⚠️ **Allergen Detection** - Identifies common allergens
+- 🛡️ **Safety Checks** - Food safety and edibility assessment
+- 📱 **Device-Based Tracking** - User management via device ID
+- 📝 **History** - Check previous product analyses
+- 🤖 **AI-Powered** - Uses Google Gemini Flash for accurate analysis
+## 🚀 Quick Start
+### Prerequisites
+- Docker & Docker Compose
+- Google Gemini API Key ([Get it here](https://makersuite.google.com/app/apikey))
+### 1. Clone & Setup
+```bash
+cd Halal-Check
 ```
-
-halal-check-ai/
-│
+### 2. Configure Environment
+```bash
+# Edit backend/.env and add your Gemini API key
+nano backend/.env
+```
+Add your API key:
+```env
+DEBUG=True
+SQL_URL=sqlite+aiosqlite:///./halal_check.db
+GEMINI_API_KEY=your_actual_gemini_api_key_here
+```
+### 3. Start the Application
+```bash
+# Build and start all services
+make build
+# Or manually:
+docker compose up --build -d
+```
+### 4. Access the Application
+- 📚 **API Documentation**: http://localhost:8000/docs
+- 🌐 **Frontend**: http://localhost:3000  
+- 💚 **Health Check**: http://localhost:8000/health
+- 🔗 **API Base**: http://localhost:8000/api/v1
+## 📖 API Usage
+### Analyze Product
+```bash
+curl -X POST "http://localhost:8000/api/v1/halal-check/analyze" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Doritos Nacho Cheese - Ingredients: Corn, Vegetable Oil, Whey, Cheddar Cheese",
+    "device_id": "my-device-123"
+  }'
+```
+### Get History
+```bash
+curl "http://localhost:8000/api/v1/halal-check/history/my-device-123"
+```
+### Get Specific Check
+```bash
+curl "http://localhost:8000/api/v1/halal-check/check/1"
+```
+## 🛠️ Development Commands
+```bash
+make help          # Show all available commands
+make build         # Build and start containers
+make down          # Stop containers
+make restart       # Restart all services
+make logs          # Show all logs
+make logs-backend  # Show backend logs only
+make test          # Test the API
+make dev           # Run backend in dev mode (local)
+```
+## 📁 Project Structure
+```
+Halal-Check/
 ├── backend/
-│   ├── main.py              # FastAPI backend with endpoints
-│   ├── requirements.txt     # Python dependencies
-│   ├── Dockerfile           # Backend Docker image setup
-│   └── uploads/
-│       ├── images/          # Uploaded images
-│       └── texts/           # Uploaded text files
-│
-├── frontend/
-│   ├── src/
-│   │   └── HalalCheckApp.js # React main component
-│   ├── public/
-│   │   └── index.html
-│   ├── package.json
-│   └── Dockerfile           # Frontend Docker image setup
-│
-└── docker-compose.yml        # Combined frontend + backend configuration
-
+│   ├── app/
+│   │   ├── config/       # Configuration
+│   │   ├── models/       # Database models
+│   │   ├── routers/      # API endpoints
+│   │   ├── schemas/      # Pydantic schemas
+│   │   ├── utils/        # Utilities (Gemini service)
+│   │   └── main.py       # FastAPI app
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   └── .env              # Environment variables
+├── frontend/             # Frontend application
+├── docker-compose.yml    # Docker configuration
+└── Makefile             # Development commands
 ```
-
----
-
-## ⚙️ Backend API (FastAPI)
-
-### Base URL
-
+## 🔧 Configuration
+### Environment Variables (`backend/.env`)
+```env
+# Debug mode
+DEBUG=True
+# Database (SQLite for development)
+SQL_URL=sqlite+aiosqlite:///./halal_check.db
+# Google Gemini API Key (REQUIRED)
+GEMINI_API_KEY=your_api_key_here
 ```
-
-[http://localhost:8000](http://localhost:8000)
-
-````
-
-### Endpoints
-
-#### 🖼️ `POST /analyze-image`
-
-Upload an image file to analyze.
-
-**Form Data:**
-| Field | Type | Required | Description |
-|--------|------|-----------|--------------|
-| `image` | file | ✅ | Image file (JPG, PNG, JPEG, GIF, WEBP) |
-
-**Response Example:**
-
+## 📊 Database Schema
+### Users Table
+- `id` - Primary key
+- `device_id` - Unique device identifier
+- `created_at` - Timestamp
+### ProductChecks Table
+- `id` - Primary key
+- `user_id` - Foreign key to users
+- `device_id` - Device identifier
+- `product_name` - Product name
+- `is_halal` - "true"/"false"/"doubtful"
+- `is_edible` - Boolean
+- `result_json` - Full analysis result
+- `input_text` - Original input
+- `created_at` - Timestamp
+## 🤖 AI Response Format
 ```json
 {
-  "status": "success",
-  "message": "Image uploaded successfully: abc123.jpg",
-  "filename": "abc123.jpg"
-}
-````
-
----
-
-#### 📝 `POST /analyze-text`
-
-Send product description text for analysis.
-
-**Form Data:**
-
-| Field  | Type   | Required | Description              |
-|--------|--------|----------|--------------------------|
-| `text` | string | ✅        | Product description text |
-
-**Response Example:**
-
-```json
-{
-  "status": "success",
-  "message": "Text uploaded successfully: xyz789.txt",
-  "filename": "xyz789.txt"
+  "product_name": "Product name",
+  "is_halal": "true/false/doubtful",
+  "halal_reason": "Detailed explanation",
+  "is_edible": true,
+  "edible_reason": "Safety explanation",
+  "detected_ingredients": ["ingredient1", "ingredient2"],
+  "harmful_or_suspicious": ["suspicious item"],
+  "allergens": ["allergen1"],
+  "overall_summary": "Brief summary"
 }
 ```
-
----
-
-#### 🏠 `GET /`
-
-Health check endpoint.
-
-```json
-{
-  "message": "Upload API is running"
-}
-```
-
----
-
-## 🧰 Local Development Setup
-
-### 🐍 Backend (FastAPI)
-
+## 🐛 Troubleshooting
+### API not starting?
 ```bash
-cd backend
-python -m venv venv
-source venv/bin/activate   # or venv\Scripts\activate on Windows
-pip install -r requirements.txt
-uvicorn main:app --reload
+# Check logs
+make logs-backend
+# Rebuild containers
+make restart
 ```
-
-The API will be available at **[http://localhost:8000](http://localhost:8000)**
-
----
-
-### ⚛️ Frontend (React)
-
+### Database issues?
 ```bash
-cd frontend
-npm install
-npm start
+# Reset database
+make down_v
+make build
 ```
-
-The web UI will be available at **[http://localhost:3000](http://localhost:3000)**
-
----
-
-## 🐳 Docker Deployment
-
-Make sure you have **Docker** and **Docker Compose** installed.
-
-Run both frontend and backend together:
-
-```bash
-docker-compose up --build
-```
-
-Then open:
-
-* Frontend → [http://localhost:3000](http://localhost:3000)
-* Backend → [http://localhost:8000/docs](http://localhost:8000/docs) for Swagger UI
-
----
-
-## 🧪 Testing the App
-
-1. Open your browser at [http://localhost:3000](http://localhost:3000)
-2. Upload an image or type a product description
-3. Click **Analyze**
-4. Wait for the response — backend will return status and message
-5. The result card shows the backend’s response clearly
-
----
-
-## 🧱 Technologies Used
-
-| Layer                | Technology                             |
-|----------------------|----------------------------------------|
-| **Frontend**         | React, TailwindCSS, Lucide React Icons |
-| **Backend**          | FastAPI, Python, python-magic          |
-| **Containerization** | Docker, Docker Compose                 |
-| **Web Server**       | Uvicorn                                |
-
----
-
-## 🧼 File Upload Handling
-
-* Uploaded **images** → stored in `backend/uploads/images/`
-* Uploaded **text files** → stored in `backend/uploads/texts/`
-* Each file gets a **unique UUID** filename to avoid conflicts
-
----
-
-## 🔍 API Documentation (Swagger UI)
-
-When backend is running, visit:
-
-👉 **[http://localhost:8000/docs](http://localhost:8000/docs)**
-
-or
-
-👉 **[http://localhost:8000/redoc](http://localhost:8000/redoc)**
-
-to view automatically generated Swagger and ReDoc documentation.
-
----
-
-## 🧠 Next Steps (AI Integration)
-
-You can extend this project easily by:
-
-* Adding a trained AI model for text/ingredient classification
-* Using image OCR (e.g., `pytesseract`) to extract ingredients from uploaded photos
-* Integrating a halal ingredient database (e.g., via public APIs)
-
----
-
-## 🪪 License
-
-This project is open source and available under the [MIT License](LICENSE).
-
----
-
-**Made with ❤️ by Khasanjon**
-
-```
-
----
-
-Would you like me to include a **Dockerfile and docker-compose.yml** example in this same README so it’s fully self-contained? (so someone could clone and `docker-compose up` immediately)
-```
+### Can't connect to API?
+1. Check containers: `docker compose ps`
+2. Check health: `curl http://localhost:8000/health`
+3. Check logs: `make logs-backend`
+### Gemini API errors?
+1. Verify API key in `backend/.env`
+2. Check key is valid at https://makersuite.google.com/app/apikey
+3. Ensure no extra spaces in `.env` file
+## 📚 Documentation
+- [API Documentation](backend/API_DOCUMENTATION.md) - Complete API reference
+- [Interactive API Docs](http://localhost:8000/docs) - Swagger UI
+## 🔒 Security Notes
+- Never commit `.env` file
+- Store API keys securely
+- Add rate limiting for production
+- Enable HTTPS in production
