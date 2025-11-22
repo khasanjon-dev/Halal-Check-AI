@@ -27,14 +27,9 @@ interface HalalCheckResponse {
     created_at: string;
 }
 
-// When accessing from browser (localhost/127.0.0.1), use localhost:8000
-// When inside Docker network, use service name 'backend:8000'
-const API_URL =
-    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-        ? 'http://localhost:8000'  // Browser access (most common)
-        : 'http://backend:8000';    // Docker internal network
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
-// Generate a unique device ID (stored in localStorage)
+
 const getDeviceId = () => {
     let deviceId = localStorage.getItem('halal_check_device_id');
     if (!deviceId) {
