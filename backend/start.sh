@@ -33,5 +33,5 @@ echo "📚 API Docs will be available at: http://localhost:8000/docs"
 echo ""
 
 # Run uvicorn
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+exec uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 
