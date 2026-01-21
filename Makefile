@@ -1,5 +1,3 @@
-.PHONY: help build up down restart logs clean install test
-
 help: ## Show available commands
 	@echo "Halal Checker API - Available Commands:"
 	@echo ""
@@ -7,14 +5,9 @@ help: ## Show available commands
 
 build: ## Build and start containers
 	docker compose up --build
-	@echo ""
-	@echo "✅ Services started!"
-	@echo "📚 API Documentation: http://localhost:8000/docs"
-	@echo "🌐 Frontend: http://localhost:3000"
-	@echo "💚 Health Check: http://localhost:8000/health"
 
 up: ## Start containers
-	docker compose up -d
+	docker compose up
 
 down: ## Stop containers
 	docker compose down
@@ -37,12 +30,3 @@ logs-frontend: ## Show frontend logs
 
 install: ## Install backend dependencies
 	cd backend && pip install -r requirements.txt
-
-test: ## Test the API
-	@echo "Testing Halal Checker API..."
-	@curl -X POST "http://localhost:8000/api/v1/halal-check/analyze" \
-		-H "Content-Type: application/json" \
-		-d '{"text": "Chicken - 100% Halal", "device_id": "test-123"}' || true
-
-dev: ## Run backend in dev mode
-	cd backend && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
