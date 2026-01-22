@@ -16,7 +16,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: http://207.154.244.190:8001
+        VITE_API_URL: api.afood.khasanjon.dev
     ports:
       - "3000:80"
     depends_on:
