@@ -15,7 +15,7 @@ RUN chmod +x start.sh
 
 
 # Expose port
-EXPOSE 8000
+EXPOSE 8001
 
 # Start the application using startup script
 CMD ["./start.sh"]
