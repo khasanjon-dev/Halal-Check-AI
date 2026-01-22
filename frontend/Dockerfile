@@ -10,7 +10,7 @@ RUN npm install
 # Copy source code
 COPY . .
 
-ARG VITE_API_URL=api.afood.khasanjon.dev
+ARG VITE_API_URL=https://api.afood.khasanjon.dev
 ENV VITE_API_URL=$VITE_API_URL
 RUN VITE_API_URL=$VITE_API_URL
 
