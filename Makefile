@@ -1,12 +1,5 @@
-.PHONY: help build up down restart logs clean install test
-
-help: ## Show available commands
-	@echo "Halal Checker API - Available Commands:"
-	@echo ""
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
-
 build: ## Build and start containers
-	docker compose up --build
+	docker compose up --build -d
 	@echo ""
 	@echo "✅ Services started!"
 	@echo "📚 API Documentation: http://localhost:8000/docs"
