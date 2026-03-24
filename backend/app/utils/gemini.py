@@ -1,246 +1,267 @@
+import asyncio
 import json
 import logging
-from typing import Optional, Dict, Any
+import re
+from typing import List, Dict, Any
 
 import google.generativeai as genai
 
 from app.config.core import settings
+from app.utils.search import FreeSearchService
 
 logger = logging.getLogger(__name__)
 
 
 class GeminiService:
-    """Service for interacting with Google Gemini API"""
+    def __init__(self, api_key: str, gemini_model: str):
+        genai.configure(api_key=api_key)
+        self.model = genai.GenerativeModel(gemini_model)
+        self.search_service = FreeSearchService()
 
-    SYSTEM_PROMPT = """You are a strict and reliable Halal Compliance and Food Safety checker. Your job is to analyze ANY product description, ingredient list, or textual product data and return a detailed halal/haram evaluation with clear explanations.
-
-Follow these rules:
-1. Be accurate and strict about halal requirements.
-2. If an ingredient is unclear, treat it as "doubtful" and explain why.
-3. Do NOT guess. Use reasoning based on general halal principles.
-4. Provide results ONLY in JSON format.
-5. Include human-edible safety checks (allergens, harmful substances, dietary concerns).
-6. Never include unnecessary text outside the JSON.
-7. is_halal MUST be one of: "true", "false", or "doubtful" (lowercase string)
-8. is_edible MUST be a boolean: true or false
-
-Return response in this EXACT JSON structure:
-
-{
-  "product_name": "string",
-  "is_halal": "true"/"false"/"doubtful",
-  "halal_reason": "string",
-  "is_edible": true/false,
-  "edible_reason": "string",
-  "detected_ingredients": ["string"],
-  "harmful_or_suspicious": ["string"],
-  "allergens": ["string"],
-  "overall_summary": "string"
-}
-
-Provide detailed reasoning in each field."""
-
-    def __init__(self):
-        if not settings.GEMINI_API_KEY:
-            raise ValueError("GEMINI_API_KEY is not set in environment variables")
-
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        # Using the latest Gemini Flash model for fast, efficient responses
-        self.model = genai.GenerativeModel("gemini-2.5-flash")
-
-    def _parse_gemini_response(self, response_text: str) -> Dict[str, Any]:
-        """Parse and validate Gemini API response"""
-        # Remove markdown code blocks if present
-        cleaned_text = response_text.strip()
-
-        if cleaned_text.startswith("```json"):
-            cleaned_text = cleaned_text[7:]
-        elif cleaned_text.startswith("```"):
-            cleaned_text = cleaned_text[3:]
-
-        if cleaned_text.endswith("```"):
-            cleaned_text = cleaned_text[:-3]
-
-        cleaned_text = cleaned_text.strip()
-
-        # Parse JSON
+    # ---------- JSON parsing ----------
+    def _safe_json(self, text: str, fallback: Any) -> Any:
+        """Extract JSON from Gemini response, handling markdown and malformed output."""
         try:
-            result = json.loads(cleaned_text)
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON response: {e}")
-            logger.error(f"Response text: {cleaned_text}")
-            raise ValueError(f"Invalid JSON response from Gemini API: {str(e)}")
+            # Remove markdown code fences
+            text = re.sub(r"```json|```", "", text).strip()
+            # Find first JSON structure
+            start = text.find('{')
+            if start == -1:
+                start = text.find('[')
+            end = text.rfind('}') if start >= 0 and text[start] == '{' else text.rfind(']')
+            if start == -1 or end == -1:
+                raise ValueError("No JSON found")
+            json_str = text[start:end + 1]
+            return json.loads(json_str)
+        except Exception as e:
+            logger.warning(f"JSON parse failed: {e}")
+            return fallback
 
-        # Validate required fields
-        required_fields = [
-            "product_name",
-            "is_halal",
-            "halal_reason",
-            "is_edible",
-            "edible_reason",
-            "detected_ingredients",
-            "harmful_or_suspicious",
-            "allergens",
-            "overall_summary",
-        ]
+    # ---------- Classification ----------
+    def classify_product_type(self, text: str) -> dict:
+        prompt = f"""
+        Classify this product:
 
-        missing_fields = [field for field in required_fields if field not in result]
-        if missing_fields:
-            raise ValueError(f"Missing required fields: {', '.join(missing_fields)}")
+        "{text}"
 
-        # Normalize is_halal to string
-        if isinstance(result["is_halal"], bool):
-            result["is_halal"] = "true" if result["is_halal"] else "false"
-        elif isinstance(result["is_halal"], str):
-            result["is_halal"] = result["is_halal"].lower()
-            # Validate it's one of the acceptable values
-            if result["is_halal"] not in ["true", "false", "doubtful"]:
-                logger.warning(
-                    f"Invalid is_halal value: {result['is_halal']}, defaulting to 'doubtful'"
-                )
-                result["is_halal"] = "doubtful"
+        Return JSON:
+        {{
+          "is_food": true/false,
+          "category": "food|cosmetic|book|electronics|other",
+          "reason": "short explanation"
+        }}
+        """
+        res = self.model.generate_content(prompt)
+        return self._safe_json(res.text, {"is_food": False, "category": "unknown", "reason": "Could not classify"})
 
-        # Normalize is_edible to boolean
-        if isinstance(result["is_edible"], str):
-            result["is_edible"] = result["is_edible"].lower() in ["true", "yes", "1"]
-        elif not isinstance(result["is_edible"], bool):
-            result["is_edible"] = False
+    # ---------- Ingredient extraction ----------
+    def extract_ingredients(self, text: str) -> List[str]:
+        prompt = f"""
+        Extract ingredients from:
 
-        # Ensure arrays are actually arrays
-        for array_field in [
-            "detected_ingredients",
-            "harmful_or_suspicious",
-            "allergens",
-        ]:
-            if not isinstance(result[array_field], list):
-                result[array_field] = []
+        "{text}"
 
-        # Ensure strings are actually strings
-        for string_field in [
-            "product_name",
-            "halal_reason",
-            "edible_reason",
-            "overall_summary",
-        ]:
-            if not isinstance(result[string_field], str):
-                result[string_field] = str(result[string_field])
+        Return JSON list:
+        ["ingredient1", "ingredient2"]
+        """
+        res = self.model.generate_content(prompt)
+        ingredients = self._safe_json(res.text, [])
+        if isinstance(ingredients, list):
+            return [i.strip().lower() for i in ingredients if isinstance(i, str)]
+        return []
 
+    # ---------- Batch AI analysis ----------
+    async def analyze_ingredients_batch(self, ingredients: List[str]) -> List[Dict[str, Any]]:
+        """One Gemini call for all ingredients."""
+        if not ingredients:
+            return []
+        prompt = f"""
+        For each of the following ingredients, tell whether it is halal or haram.
+        Return a JSON array of objects, each with:
+          - "ingredient": the ingredient name (exactly as given)
+          - "is_halal": "true"|"false"|"doubtful"
+          - "reason": short explanation
+          - "confidence": 0-100
+
+        Ingredients:
+        {", ".join(ingredients)}
+        """
+        loop = asyncio.get_event_loop()
+        res = await loop.run_in_executor(None, self.model.generate_content, prompt)
+        data = self._safe_json(res.text, [])
+
+        # Convert dict to list if needed (e.g., {"0": {...}, "1": {...}})
+        if isinstance(data, dict):
+            try:
+                sorted_keys = sorted(data.keys(), key=lambda x: int(x) if x.isdigit() else float('inf'))
+                data = [data[k] for k in sorted_keys]
+            except Exception:
+                data = list(data.values())
+
+        if not isinstance(data, list):
+            data = []
+
+        # Build result list matching input order
+        result = []
+        for i, ing in enumerate(ingredients):
+            item = data[i] if i < len(data) else {}
+            if not isinstance(item, dict):
+                item = {}
+            result.append({
+                "ingredient": ing,
+                "is_halal": item.get("is_halal", "doubtful"),
+                "reason": item.get("reason", "unknown"),
+                "confidence": item.get("confidence", 50)
+            })
         return result
 
-    async def analyze_product(self, product_text: str) -> Dict[str, Any]:
+    # ---------- Google analysis for a single ingredient ----------
+    def analyze_google(self, ingredient: str, evidence: List[dict]) -> dict:
+        if not evidence:
+            return {"decision": "unclear", "summary": "No search results", "links": []}
+        text = "\n".join(f"{e.get('title', '')} - {e.get('snippet', '')}" for e in evidence)
+        prompt = f"""
+        Ingredient: {ingredient}
+
+        Based ONLY on this:
+
+        {text}
+
+        Return JSON:
+        {{
+          "decision": "halal|haram|mixed|unclear",
+          "summary": "short explanation"
+        }}
         """
-        Analyze product text for halal compliance and food safety
+        res = self.model.generate_content(prompt)
+        google_result = self._safe_json(res.text, {"decision": "unclear", "summary": "Could not determine"})
+        google_result["links"] = evidence
+        return google_result
 
-        Args:
-            product_text: The product description or ingredient list
-
-        Returns:
-            Dictionary containing the analysis results
-
-        Raises:
-            ValueError: If the response is invalid or cannot be parsed
-            Exception: For other API errors
-        """
-        if not product_text or not product_text.strip():
-            raise ValueError("Product text cannot be empty")
-
+    # ---------- Process a single ingredient with search ----------
+    async def process_ingredient(self, ingredient: str, ai_result: dict, is_food: bool = True) -> dict:
+        loop = asyncio.get_event_loop()
+        # Build search query with context to disambiguate
+        if is_food:
+            query = f"{ingredient} halal or haram food ingredient"
+        else:
+            query = f"{ingredient} halal or haram"
         try:
-            user_prompt = f"""Analyze the following product description for halal compliance and food safety:
-
-"{product_text.strip()}"
-
-Return ONLY the JSON as described in the system prompt. No additional text or explanation."""
-
-            full_prompt = f"{self.SYSTEM_PROMPT}\n\n{user_prompt}"
-
-            logger.info("Sending request to Gemini API for product analysis")
-            response = self.model.generate_content(full_prompt)
-
-            if not response or not response.text:
-                raise ValueError("Empty response from Gemini API")
-
-            result = self._parse_gemini_response(response.text)
-
-            logger.info(
-                f"Successfully analyzed product: {result.get('product_name', 'Unknown')}, "
-                f"Halal: {result.get('is_halal')}, Edible: {result.get('is_edible')}"
+            evidence = await asyncio.wait_for(
+                loop.run_in_executor(None, self.search_service.search, query),
+                timeout=5
             )
-            return result
+        except Exception:
+            evidence = []
+        google_result = await loop.run_in_executor(None, self.analyze_google, ingredient, evidence)
+        return {
+            "ingredient": ingredient,
+            "ai_analysis": ai_result,
+            "google_analysis": google_result
+        }
 
-        except ValueError:
-            raise
-        except Exception as e:
-            logger.error(f"Error calling Gemini API: {e}", exc_info=True)
-            raise Exception(f"Failed to analyze product: {str(e)}")
+    # ---------- Main product analysis ----------
+    async def analyze_product(self, text: str) -> dict:
+        # Step 1: classify
+        product_type = self.classify_product_type(text)
+        is_food = product_type.get("is_food", False)
+        if not is_food:
+            return {
+                "product_name": text[:50],
+                "is_edible": False,
+                "category": product_type.get("category"),
+                "ingredients_analysis": [],
+                "overall_summary": f"Not a food product. {product_type.get('reason')}"
+            }
 
-    async def analyze_image(
-        self, image_bytes: bytes, mime_type: str = "image/jpeg"
-    ) -> Dict[str, Any]:
-        """
-        Analyze product image for halal compliance using OCR
+        # Step 2: extract ingredients
+        ingredients = self.extract_ingredients(text)
+        if not ingredients:
+            return {
+                "product_name": text[:50],
+                "is_edible": True,
+                "is_halal": "doubtful",
+                "ingredients_analysis": [],
+                "overall_summary": "No ingredients detected"
+            }
 
-        Args:
-            image_bytes: The image binary data
-            mime_type: MIME type of the image
+        # Step 3: batch AI analysis
+        ai_results = await self.analyze_ingredients_batch(ingredients)
 
-        Returns:
-            Dictionary containing the analysis results
+        # Step 4: parallel Google searches + combine
+        tasks = [self.process_ingredient(ing, ai, is_food) for ing, ai in zip(ingredients, ai_results)]
+        combined_results = await asyncio.gather(*tasks)
 
-        Raises:
-            ValueError: If the response is invalid or cannot be parsed
-            Exception: For other API errors
-        """
-        if not image_bytes or len(image_bytes) == 0:
-            raise ValueError("Image data cannot be empty")
+        # Step 5: flatten per-ingredient results for the schema
+        flattened_ingredients = []
+        for combined in combined_results:
+            ai = combined["ai_analysis"]
+            google = combined["google_analysis"]
 
-        try:
-            user_prompt = """Analyze this product label image using OCR. Extract all visible text including:
-- Product name
-- Ingredients list
-- Nutritional information
-- Any certifications or labels
-- Any relevant food safety information
+            final_is_halal = ai["is_halal"]
+            if google.get("decision") == "haram":
+                final_is_halal = "false"
+            elif google.get("decision") == "halal" and final_is_halal == "doubtful":
+                final_is_halal = "true"
 
-Then analyze the extracted information for halal compliance and food safety.
+            reason = f"{ai['reason']} (Google: {google.get('summary', 'no info')})"
 
-Return ONLY the JSON as described in the system prompt. No additional text or explanation."""
+            evidence = []
+            for link in google.get("links", []):
+                evidence.append({
+                    "title": link.get("title", ""),
+                    "snippet": link.get("snippet", ""),
+                    "link": link.get("link", "")
+                })
 
-            full_prompt = f"{self.SYSTEM_PROMPT}\n\n{user_prompt}"
+            flattened_ingredients.append({
+                "ingredient": combined["ingredient"],
+                "is_halal": final_is_halal,
+                "reason": reason,
+                "evidence": evidence,
+                "confidence": ai.get("confidence", 50)
+            })
 
-            logger.info(
-                f"Sending image analysis request to Gemini API (mime_type: {mime_type})"
-            )
+        # Step 6: final product decision
+        final_product_halal = "true"
+        for ing in flattened_ingredients:
+            if ing["is_halal"] == "false":
+                final_product_halal = "false"
+                break
+            elif ing["is_halal"] == "doubtful":
+                final_product_halal = "doubtful"
 
-            # Create image part for Gemini
-            image_part = {"mime_type": mime_type, "data": image_bytes}
+        return {
+            "product_name": text[:50],
+            "is_edible": True,
+            "is_halal": final_product_halal,
+            "ingredients_analysis": flattened_ingredients,
+            "overall_summary": "Analysis completed"
+        }
 
-            response = self.model.generate_content([full_prompt, image_part])
-
-            if not response or not response.text:
-                raise ValueError("Empty response from Gemini API")
-
-            result = self._parse_gemini_response(response.text)
-
-            logger.info(
-                f"Successfully analyzed image: {result.get('product_name', 'Unknown')}, "
-                f"Halal: {result.get('is_halal')}, Edible: {result.get('is_edible')}"
-            )
-            return result
-
-        except ValueError:
-            raise
-        except Exception as e:
-            logger.error(f"Error calling Gemini API for image: {e}", exc_info=True)
-            raise Exception(f"Failed to analyze image: {str(e)}")
+    # ---------- Image analysis (placeholder) ----------
+    async def analyze_image(self, image_bytes: bytes, content_type: str) -> dict:
+        # For a real implementation, use Gemini Vision to extract text from the image
+        # and then call analyze_product with that text.
+        # This example returns a placeholder.
+        return {
+            "product_name": "Image product",
+            "is_edible": True,
+            "is_halal": "doubtful",
+            "ingredients_analysis": [],
+            "overall_summary": "Image OCR not implemented in this example."
+        }
 
 
-# Singleton instance
-_gemini_service: Optional[GeminiService] = None
+# ---------- Singleton ----------
+_gemini_service = None
 
 
 def get_gemini_service() -> GeminiService:
-    """Get or create Gemini service instance"""
     global _gemini_service
     if _gemini_service is None:
-        _gemini_service = GeminiService()
+        _gemini_service = GeminiService(
+            api_key=settings.GEMINI_API_KEY,
+            gemini_model=settings.GEMINI_MODEL
+        )
     return _gemini_service
